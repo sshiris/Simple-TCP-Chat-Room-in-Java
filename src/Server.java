@@ -12,24 +12,27 @@ public class Server implements Runnable{
     private final ArrayList <ConnectionHandler> connectionHandlers = new ArrayList<>();
     private ServerSocket serverSocket;
     private ExecutorService pool;
+    private boolean done = false;
 
     @Override
     public void run(){
         try {
             serverSocket= new ServerSocket(9999);
             pool = Executors.newCachedThreadPool();
-            Socket client = serverSocket.accept();
-            ConnectionHandler connectionHandler = new ConnectionHandler(client);
-            connectionHandlers.add(connectionHandler);
-            pool.execute(connectionHandler);
+            while(!done){
+                Socket client = serverSocket.accept();
+                ConnectionHandler connectionHandler = new ConnectionHandler(client);
+                connectionHandlers.add(connectionHandler);
+                pool.execute(connectionHandler);
+            }
         } catch (IOException e) {
             shutdown();
         }
     }
 
-    public void broadcastMessage(String message){
+    public void broadcastMessage(String message, ConnectionHandler sender){
         for(ConnectionHandler ch : connectionHandlers){
-            if (ch != null){
+            if (ch != null && ch != sender){
                 ch.sendMessage(message);
             }
         }
@@ -37,6 +40,7 @@ public class Server implements Runnable{
 
     public void shutdown(){
         try {
+            done=true;
             for(ConnectionHandler ch : connectionHandlers){
                 ch.shutdown();
             }
@@ -48,9 +52,10 @@ public class Server implements Runnable{
         }
     }
     class ConnectionHandler implements Runnable{
-        Socket client;
-        PrintWriter out;
-        BufferedReader in;
+        private Socket client;
+        private PrintWriter out;
+        private BufferedReader in;
+        private String username;
 
         public ConnectionHandler(Socket client){
             this.client = client;
@@ -62,22 +67,19 @@ public class Server implements Runnable{
                 out = new PrintWriter(client.getOutputStream(),true);
                 in = new BufferedReader(new InputStreamReader(client.getInputStream()));
                 out.println("Please enter a username: ");
-                String username = in.readLine();
-                System.out.println("welcome "+ username);
-                broadcastMessage(username+" joined the chat");
+                username = in.readLine();
+                System.out.println(username+" connected!");
+                broadcastMessage(username+" joined the chat", this);
 
-                out.println("Please enter a message: ");
-                String message = in.readLine();
-                while (message != null){
+                String message;
+                while ((message = in.readLine()) != null){
                     if(message.equalsIgnoreCase("exit")){
-                        out.println(username+" has left the chat");
-                        broadcastMessage(message);
+                        broadcastMessage(username+" has left the chat", this);
                         shutdown();
                     } else {
-                        System.out.println(username + ": " + message);
-                        broadcastMessage(username + ": " + message);
+                        broadcastMessage(username + ": " + message, this);
                     }
-                    message = in.readLine();
+                    System.out.println(username+": "+message);
                 }
 
             } catch (IOException e) {
